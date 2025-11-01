@@ -1,0 +1,219 @@
+NOTE.TXT
+=========
+
+Agent Quiz — Complete Challenge Note
+------------------------------------
+
+File: note.txt
+Purpose: single-file authoritative note containing challenge description, logic, full write-up,
+automated solver script, compile/run instructions, and final flag. Save as UTF-8.
+
+------------------------------------
+1) Challenge Overview
+------------------------------------
+Name: Agent Quiz
+Category: Reverse Engineering / Interactive Crackme
+Difficulty: Hard (easy if source available)
+Flag format: ctf7{...}
+
+Short description:
+The program displays a large ASCII banner, then asks the player six decoy questions (answers are arbitrary).
+After the six answers it prints a short status line and prompts for a FINAL Product Key.
+If the provided Product Key exactly matches the internally stored secret, the program prints the flag.
+Otherwise it prints "Access Denied."
+
+Goal:
+Recover the correct Product Key (by reversing the binary or inspecting the source) and submit it as the 7th answer to retrieve the flag.
+
+------------------------------------
+2) Program logic (precise)
+------------------------------------
+1. Set locale (attempt UTF-8 for art rendering).
+2. Print the supplied ASCII art (raw Unicode block characters).
+3. Print a basic header: "=== Agent Product Key Validator ===".
+4. Prompt six times for decoy answers:
+   Q1) Agent codename?
+   Q2) Last operation city?
+   Q3) Favourite cipher?
+   Q4) Trusted contact (initials)?
+   Q5) Year of commissioning?
+   Q6) Backup phrase (one word)?
+   - Each prompt is typed with a tiny delay (typing effect).
+   - User input is read and stored (no validation).
+5. Print a status line exactly: "[STATUS] Target: shot his right hand, left leg. Marked parts: 2/6."
+   Print: "[INFO] Recorded answers. One final verification remains."
+6. Prompt: "FINAL) Product Key: " (typed with delay).
+7. Read the user's final answer (trim newline).
+8. Compare final answer to an internal constant:
+   SECRET_KEY = "C7T-AG3NT-K3Y-VAULT"
+   Implemented as: strcmp(user_input, SECRET_KEY) == 0
+9. If match:
+      print "Access Granted."
+      print "FLAG: ctf7{C7T-AG3NT-K3Y-VAULT}"
+   Else:
+      print "Access Denied."
+10. Exit.
+
+Notes:
+- The typing effect is cosmetic only.
+- The ASCII art uses Unicode characters; if terminal or font doesn't support them you may see replacement glyphs.
+- The program does not perform additional transformations (no XOR, no LFSR) in this version — it's a straightforward string compare.
+
+------------------------------------
+3) How to build & run (instructions)
+------------------------------------
+Prerequisites: gcc (with C standard library), UTF-8-capable editor/terminal.
+
+Save the C source as: agent_quiz.c
+(Ensure file encoding UTF-8 if you want the Unicode art preserved.)
+
+Compile:
+    gcc -O2 -o agent_quiz agent_quiz.c -Wall -Wextra
+
+Run:
+    ./agent_quiz
+
+You will see the banner and be asked 6 questions followed by "FINAL) Product Key:"
+
+------------------------------------
+4) Quick manual solve (if you have source)
+------------------------------------
+Open agent_quiz.c and find:
+    static const char *SECRET_KEY = "C7T-AG3NT-K3Y-VAULT";
+
+That's the final product key. Enter it when prompted to receive the flag:
+    ctf7{C7T-AG3NT-K3Y-VAULT}
+
+------------------------------------
+5) Binary-only write-up (reverse-engineering steps)
+------------------------------------
+If you only have the binary (agent_quiz) and not the source, use this approach:
+
+A. Quick strings inspection:
+   strings agent_quiz | grep -E 'AG3NT|VAULT|Product'
+   - Often reveals candidate strings; if SECRET_KEY is present, try it directly.
+
+B. If strings does not reveal the key:
+   1. Open the binary in a decompiler/disassembler (Ghidra, Cutter, IDA Pro, radare2).
+   2. Search for calls to input routines (fgets/getline/scanf) and for strcmp/strncmp references.
+   3. Trace the codepath from the prompt read to the comparison. The comparison usually references a static constant (the secret).
+   4. Extract the constant (it may be stored as a single string or reconstructed before compare).
+
+C. Dynamic approach:
+   - Run the program under strace / ltrace / /proc/syscall tracing to see I/O — sometimes the program prints debugging info.
+   - Use a debugger (gdb) to set a breakpoint just before the strcmp and inspect the constant or the memory contents of the expected key.
+
+D. Automated attempt:
+   - If you see multiple candidate strings in "strings", write a small script to feed each candidate as the final input and check which one yields "Access Granted."
+
+------------------------------------
+6) Automated solver (Bash)
+------------------------------------
+This solver feeds 6 dummy answers and the correct Product Key to the program, then captures output.
+Save as: solve_agent_quiz.sh
+
+#!/usr/bin/env bash
+# solve_agent_quiz.sh - automated solver for agent_quiz
+# Usage: bash ./solve_agent_quiz.sh
+
+BINARY="./agent_quiz"
+if [ ! -x "$BINARY" ]; then
+  printf "ERROR: %s not found or not executable. Compile first:\n" "$BINARY"
+  printf "  gcc -O2 -o agent_quiz agent_quiz.c -Wall -Wextra\n"
+  exit 1
+fi
+
+# Known correct product key (embedded in the source)
+PRODUCT_KEY="C7T-AG3NT-K3Y-VAULT"
+
+# Dummy answers for the 6 decoy prompts (any strings)
+ANS1="Shadow"
+ANS2="Berlin"
+ANS3="AES"
+ANS4="JD"
+ANS5="2021"
+ANS6="Omega"
+
+# Feed answers into the program (zsh-safe)
+{
+  printf "%s\n" "$ANS1"
+  printf "%s\n" "$ANS2"
+  printf "%s\n" "$ANS3"
+  printf "%s\n" "$ANS4"
+  printf "%s\n" "$ANS5"
+  printf "%s\n" "$ANS6"
+  printf "%s\n" "$PRODUCT_KEY"
+} | "$BINARY" | tee solve_output.txt
+
+printf "\n=====================================\n"
+printf "[+] Attempt complete. Checking result...\n"
+if grep -q "FLAG:" solve_output.txt; then
+  grep "FLAG:" solve_output.txt
+else
+  printf "[-] Flag not found. Inspect solve_output.txt\n"
+fi
+
+Make executable:
+    chmod +x solve_agent_quiz.sh
+Run:
+    ./solve_agent_quiz.sh
+
+The script writes captured output to solve_output.txt and prints the FLAG line if found.
+
+------------------------------------
+7) Example solve run (expected)
+------------------------------------
+User runs program and provides the following inputs:
+  (answers to Q1-Q6 arbitrary)
+  FINAL Product Key: C7T-AG3NT-K3Y-VAULT
+
+Output:
+  Access Granted.
+  FLAG: ctf7{C7T-AG3NT-K3Y-VAULT}
+
+------------------------------------
+8) Full write-up (step-by-step solution)
+------------------------------------
+1. Obtain binaries: agent_quiz (or the source).
+2. Try strings:
+     strings agent_quiz | grep -i 'AG3NT\|VAULT\|PRODUCT'
+   If you see "C7T-AG3NT-K3Y-VAULT" try it at the prompt.
+3. If strings fails, load into a decompiler:
+   - Identify code that prints "FINAL) Product Key:" and where it reads input.
+   - Follow the input variable to a function that compares it (strcmp).
+   - Examine the constant compared against — that's SECRET_KEY.
+4. Use the extracted key as the seventh input, receive flag.
+5. For automation, pipe answers plus key into the binary (see solver script).
+
+------------------------------------
+9) Final flag (revealed)
+------------------------------------
+ctf7{C7T-AG3NT-K3Y-VAULT}
+
+------------------------------------
+10) Notes for challenge authors (optional)
+------------------------------------
+- To increase difficulty:
+  * Obfuscate SECRET_KEY in the binary: split the string, XOR with a constant, store pieces in different sections and reconstruct at runtime.
+  * Use a small VM or bytecode interpreter to reconstruct the key at runtime — forces VM analysis.
+  * Use anti-debugging (ptrace checks) and packers.
+  * Strip strings and symbols: `strip agent_quiz`; use UPX or custom packer.
+- To ease difficulty:
+  * Add a hint printed after Q4.
+  * Print a partial checksum of the key.
+
+------------------------------------
+11) UTF-8 & Rendering note
+------------------------------------
+The large ASCII art uses Unicode block characters and zero-width spaces. If your terminal prints garbled replacement characters (e.g., "����"), try:
+  export LANG=en_US.UTF-8
+and use a terminal font that supports those glyphs.
+If you want a guaranteed portable banner, replace Unicode glyphs with plain ASCII characters.
+
+------------------------------------
+Contact / Credits
+------------------------------------
+Author: CTF7 Team (example)
+Created with assistance (and formatted) for packaging in a single note file.
+
+END OF NOTE.TXT
